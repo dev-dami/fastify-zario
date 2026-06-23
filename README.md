@@ -27,23 +27,17 @@ bun add file:/path/to/fastify-zario
 
 ## Usage
 
-When creating your Fastify instance, wrap your Zario Logger instance using `createFastifyLogger` and pass it to Fastify's `logger` configuration.
+### Basic Usage (Zero Configuration)
+
+You can register the logger wrapper directly without importing the core `zario` package. It will automatically initialize a default Zario Logger instance.
 
 ```typescript
 import Fastify from 'fastify';
 import { createFastifyLogger } from 'fastify-zario';
-import { Logger } from 'zario';
 
-// 1. Initialize Zario Logger
-const logger = new Logger({
-  level: 'info',
-  json: true,
-  timestamp: true
-});
-
-// 2. Wrap it and pass it to the Fastify configuration
 const fastify = Fastify({
-  logger: createFastifyLogger(logger),
+  // Automatically instantiates default Zario logger internally
+  logger: createFastifyLogger(),
 });
 
 fastify.get('/', async (request, reply) => {
@@ -56,7 +50,40 @@ fastify.listen({ port: 3000 }, (err) => {
     fastify.log.error(err.message);
     process.exit(1);
   }
-  fastify.log.info('Server listening on port 3000');
+});
+```
+
+### Custom Logger Usage
+
+If you need to configure custom settings (such as JSON formatting or log levels), initialize a Zario `Logger` instance and pass it to `createFastifyLogger()`.
+
+```typescript
+import Fastify from 'fastify';
+import { createFastifyLogger } from 'fastify-zario';
+import { Logger } from 'zario';
+
+// 1. Initialize custom Zario Logger
+const customLogger = new Logger({
+  level: 'info',
+  json: true,
+  timestamp: true
+});
+
+// 2. Wrap it and pass it to Fastify configuration
+const fastify = Fastify({
+  logger: createFastifyLogger(customLogger),
+});
+
+fastify.get('/', async (request, reply) => {
+  request.log.info('Handling home request');
+  return { hello: 'world' };
+});
+
+fastify.listen({ port: 3000 }, (err) => {
+  if (err) {
+    fastify.log.error(err.message);
+    process.exit(1);
+  }
 });
 ```
 
