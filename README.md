@@ -1,115 +1,82 @@
 # fastify-zario
 
-Fastify custom logger adapter wrapper for Zario.
-
-## Installation
-
-Install `fastify-zario` along with its peer dependencies `zario` and `fastify` in your application:
+Use Zario as Fastify's logger, with structured fields, request children, errors,
+level control and shutdown methods. Tested with Fastify 4 and 5 on Bun.
 
 ```bash
-# Using npm
-npm install fastify-zario zario fastify
-
-# Using bun
-bun add fastify-zario zario fastify
-
-# Using pnpm
-pnpm add fastify-zario zario fastify
+bun add fastify-zario fastify zario
 ```
 
-### Local Development / Linking
-
-To link a local clone of `fastify-zario` to your application during development, reference its absolute path:
-
-```bash
-bun add file:/path/to/fastify-zario
-```
-
-## Usage
-
-### Basic Usage (Zero Configuration)
-
-You can register the logger wrapper directly without importing the core `zario` package. It will automatically initialize a default Zario Logger instance.
-
-```typescript
+```ts
 import Fastify from 'fastify';
 import { createFastifyLogger } from 'fastify-zario';
 
-const fastify = Fastify({
-  // Automatically instantiates default Zario logger internally
-  logger: createFastifyLogger(),
+const logger = createFastifyLogger();
+const app = Fastify({ loggerInstance: logger }); // Fastify 5
+app.get('/', (request) => {
+  request.log.info({ answer: 42 }, 'handled');
+  return { ok: true };
 });
-
-fastify.get('/', async (request, reply) => {
-  request.log.info('Handling home request');
-  return { hello: 'world' };
-});
-
-fastify.listen({ port: 3000 }, (err) => {
-  if (err) {
-    fastify.log.error(err.message);
-    process.exit(1);
-  }
-});
+app.addHook('onClose', async () => { await logger.close(); });
+await app.listen({ port: 3000 });
 ```
 
-### Custom Logger Usage
+Fastify 4 uses `Fastify({ logger })` instead. This distinction follows the
+[Fastify migration guide](https://fastify.dev/docs/latest/Guides/Migration-Guide-V5/).
 
-If you need to configure custom settings (such as JSON formatting or log levels), initialize a Zario `Logger` instance and pass it to `createFastifyLogger()`.
+## Custom configuration
 
-```typescript
-import Fastify from 'fastify';
-import { createFastifyLogger } from 'fastify-zario';
-import { Logger } from 'zario';
-
-// 1. Initialize custom Zario Logger
-const customLogger = new Logger({
-  level: 'info',
-  json: true,
-  timestamp: true
-});
-
-// 2. Wrap it and pass it to Fastify configuration
-const fastify = Fastify({
-  logger: createFastifyLogger(customLogger),
-});
-
-fastify.get('/', async (request, reply) => {
-  request.log.info('Handling home request');
-  return { hello: 'world' };
-});
-
-fastify.listen({ port: 3000 }, (err) => {
-  if (err) {
-    fastify.log.error(err.message);
-    process.exit(1);
-  }
-});
+```ts
+import { zario } from 'zario';
+const logger = createFastifyLogger(zario({ json: true, level: 'debug' }));
+logger.info({ userId: 42 }, 'saved %s', 'record');
+logger.error(new Error('failed'));
+logger.child({ scope: 'worker' }).warn('retrying');
+await logger.flush();
 ```
 
-## Configuration
+The adapter implements `info`, `warn`, `error`, `debug`, `fatal`, `trace`,
+`silent`, `child`, and the `level` getter/setter. `trace` maps to Zario's `boring`;
+`silent` disables output. `flush()` and `close()` delegate to the wrapped logger.
+Close a supplied logger only when all its owners are done with it.
 
-The `createFastifyLogger` function accepts an optional `Logger` instance:
+Default request/response serializers keep only a small set of fields, rather
+than serializing entire Fastify objects. Override them with
+`createFastifyLogger(log, { serializers: { req: value => ... } })` or child
+options. The adapter's default request serializer excludes query strings, but Fastify can
+supply its own serializers when creating children. Those child serializers take
+precedence. Custom/framework serializers are responsible for their sensitive fields.
 
-```typescript
-function createFastifyLogger(zarioInstance?: Logger): FastifyLoggerAdapter
+Object-first calls and printf arguments are supported. Message-first structured
+metadata should be logged through the underlying Zario instance; Fastify's
+message-first extra arguments follow printf semantics.
+
+## Development
+
+Bun is the package manager and test runner. Keep the core checkout at `../../zario`:
+
+```text
+workspace/
+  zario/
+  zario-adapters/
+    fastify-zario/
 ```
 
-If no `Logger` instance is provided, it will automatically instantiate a new `Logger`.
+Build the core first with `bun install --frozen-lockfile && bun run build` in
+`workspace/zario`. Then in this adapter:
 
-## API Mapping
+```bash
+bun install --frozen-lockfile
+bun run typecheck
+bun run lint
+bun test
+bun run build
+```
 
-The Fastify adapter translates Fastify logger methods into Zario log levels:
-
-| Fastify Logger Method | Zario Log Level |
-| :--- | :--- |
-| `info` | `info` |
-| `warn` | `warn` |
-| `error` | `error` |
-| `debug` | `debug` |
-| `fatal` | `fatal` |
-| `trace` | `boring` |
-| `child` | Creates a child logger via Zario `createChild` |
+CI checks out and builds the pinned core revision before testing the adapter.
+The relative development dependency stays out of the published runtime contract;
+applications install the `zario` peer dependency normally. These changes require
+Zario 0.9.0; publish the core before releasing this adapter.
 
 ## License
 
